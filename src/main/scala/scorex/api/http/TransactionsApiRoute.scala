@@ -10,7 +10,7 @@ import io.swagger.annotations._
 import play.api.libs.json._
 import scorex.account.Account
 import scorex.crypto.encode.Base58
-import scorex.transaction.lease.LeaseCancelTransaction
+import scorex.transaction.lease.{LeaseCancelTransaction, LeaseTransaction}
 import scorex.transaction.{History, SimpleTransactionModule, State, Transaction}
 
 @Path("/transactions")
@@ -80,7 +80,7 @@ case class TransactionsApiRoute(
   private def txToExtendedJson(tx: Transaction): JsObject = {
     tx match {
       case leaseCancel: LeaseCancelTransaction =>
-        leaseCancel.json ++ JsObject(Map("lease" -> state.findTransaction(leaseCancel.leaseId).map(_.json).getOrElse(JsNull)))
+        leaseCancel.json ++ JsObject(Map("lease" -> state.findTransaction[LeaseTransaction](leaseCancel.leaseId).map(_.json).getOrElse(JsNull)))
       case tx => tx.json
     }
   }
