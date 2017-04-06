@@ -54,7 +54,7 @@ class Application(as: ActorSystem, wavesSettings: WavesSettings) extends {
     PaymentApiRoute(settings.restAPISettings, wallet, transactionModule),
     UtilsApiRoute(settings.restAPISettings),
     PeersApiRoute(settings.restAPISettings, peerManager, networkController),
-    AddressApiRoute(settings.restAPISettings, wallet, blockStorage.state, consensusModule),
+    AddressApiRoute(settings.restAPISettings, wallet, blockStorage.state, consensusModule, transactionModule),
     DebugApiRoute(settings.restAPISettings, wallet, blockStorage),
     WavesApiRoute(settings.restAPISettings, wallet, transactionModule),
     AssetsApiRoute(settings.restAPISettings, wallet, blockStorage.state, transactionModule),

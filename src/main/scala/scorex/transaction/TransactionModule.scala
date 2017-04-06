@@ -6,7 +6,7 @@ trait TransactionModule {
 
   def genesisData: Seq[Transaction]
 
-  val blockStorage: BlockStorage
+  def blockStorage: BlockStorage
 
   def isValid(block: Block): Boolean
 

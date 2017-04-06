@@ -9,18 +9,17 @@ import com.wavesplatform.settings.RestAPISettings
 import io.swagger.annotations._
 import play.api.libs.json._
 import scorex.account.{Account, PublicKeyAccount}
-import scorex.consensus.ConsensusModule
 import scorex.consensus.nxt.WavesConsensusModule
 import scorex.crypto.EllipticCurveImpl
 import scorex.crypto.encode.Base58
-import scorex.transaction.State
+import scorex.transaction.{State, TransactionModule}
 import scorex.wallet.Wallet
 
 import scala.util.{Failure, Success, Try}
 
 @Path("/addresses")
 @Api(value = "/addresses/", description = "Info about wallet's accounts and other calls about addresses")
-case class AddressApiRoute(settings: RestAPISettings, wallet: Wallet, state: State, consensusModule: WavesConsensusModule) extends ApiRoute {
+case class AddressApiRoute(settings: RestAPISettings, wallet: Wallet, state: State, consensusModule: WavesConsensusModule, transactionModule: TransactionModule) extends ApiRoute {
   import AddressApiRoute._
 
   val MaxAddressesPerRequest = 1000
@@ -129,7 +128,7 @@ case class AddressApiRoute(settings: RestAPISettings, wallet: Wallet, state: Sta
     new ApiImplicitParam(name = "address", value = "Address", required = true, dataType = "string", paramType = "path")
   ))
   def balanceDetails: Route = (path("balance" / "details" / Segment) & get) { address =>
-    complete(balancesDetailsJson(address))
+    complete(balancesDetailsJson(address)(transactionModule))
   }
 
   @Path("/balance/{address}/{confirmations}")
@@ -239,7 +238,7 @@ case class AddressApiRoute(settings: RestAPISettings, wallet: Wallet, state: Sta
       .getOrElse(InvalidAddress)
   }
 
-  private def balancesDetailsJson(address: String): ToResponseMarshallable = {
+  private def balancesDetailsJson(address: String)(implicit transactionModule: TransactionModule): ToResponseMarshallable = {
     Account.fromString(address).right.map(acc => {
       val wavesBalance = state.balance(acc)
       ToResponseMarshallable(BalanceDetails(

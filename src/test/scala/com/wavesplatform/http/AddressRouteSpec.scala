@@ -1,17 +1,16 @@
 package com.wavesplatform.http
 
-import com.typesafe.config.ConfigFactory
 import com.wavesplatform.http.ApiMarshallers._
-import com.wavesplatform.settings.RestAPISettings
 import org.scalacheck.Gen
 import org.scalamock.scalatest.PathMockFactory
 import org.scalatest.prop.PropertyChecks
 import play.api.libs.json._
+import scorex.account.Account
 import scorex.api.http.{AddressApiRoute, ApiKeyNotValid, InvalidMessage}
+import scorex.consensus.nxt.WavesConsensusModule
 import scorex.crypto.EllipticCurveImpl
 import scorex.crypto.encode.Base58
-import scorex.crypto.hash.SecureCryptographicHash
-import scorex.transaction.State
+import scorex.transaction.{BlockStorage, State, TransactionModule}
 import scorex.wallet.Wallet
 
 class AddressRouteSpec extends RouteSpec("/addresses") with PathMockFactory with PropertyChecks with RestAPISettingsHelper {
@@ -35,7 +34,25 @@ class AddressRouteSpec extends RouteSpec("/addresses") with PathMockFactory with
     m
   }
 
-  private val route = AddressApiRoute(restAPISettings, wallet, state).route
+  private val consensusModule = {
+    val m = mock[WavesConsensusModule]
+    (m.generatingBalance(_: Account, _: Int)(_: TransactionModule)).expects(*,*,*).returning(0L).anyNumberOfTimes()
+    m
+  }
+
+  private val blockStorage = {
+    val m = mock[BlockStorage]
+    (m.state _).expects().returning(state).anyNumberOfTimes()
+    m
+  }
+
+  private val transactionModule = {
+    val m = mock[TransactionModule]
+    (m.blockStorage _).expects().returning(blockStorage).anyNumberOfTimes()
+    m
+  }
+
+  private val route = AddressApiRoute(restAPISettings, wallet, state, consensusModule, transactionModule).route
 
   private val generatedMessages = for {
     account <- Gen.oneOf(allAccounts).label("account")
@@ -136,6 +153,7 @@ class AddressRouteSpec extends RouteSpec("/addresses") with PathMockFactory with
   routePath("/verifyText/{address}") in testVerify("verifyText", false)
   routePath("/verify/{address}") in testVerify("verify", true)
 
+  // todo add balance details test
   routePath("/balance/{address}/{confirmations}") in {
     val gen = for {
       address <- Gen.oneOf(allAddresses).label("address")
@@ -149,7 +167,7 @@ class AddressRouteSpec extends RouteSpec("/addresses") with PathMockFactory with
 
         val m = mock[State]
         (m.balanceWithConfirmations _).expects(*, confirmations).returning(balances).once()
-        val r = AddressApiRoute(restAPISettings, wallet, m).route
+        val r = AddressApiRoute(restAPISettings, wallet, m, consensusModule, transactionModule).route
 
         Get(routePath(s"/balance/$address/$confirmations")) ~> r ~> check {
           val b = responseAs[AddressApiRoute.Balance]
