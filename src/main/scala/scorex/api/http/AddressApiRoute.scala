@@ -9,6 +9,8 @@ import com.wavesplatform.settings.RestAPISettings
 import io.swagger.annotations._
 import play.api.libs.json._
 import scorex.account.{Account, PublicKeyAccount}
+import scorex.consensus.ConsensusModule
+import scorex.consensus.nxt.WavesConsensusModule
 import scorex.crypto.EllipticCurveImpl
 import scorex.crypto.encode.Base58
 import scorex.transaction.State
@@ -18,14 +20,14 @@ import scala.util.{Failure, Success, Try}
 
 @Path("/addresses")
 @Api(value = "/addresses/", description = "Info about wallet's accounts and other calls about addresses")
-case class AddressApiRoute(settings: RestAPISettings, wallet: Wallet, state: State) extends ApiRoute {
+case class AddressApiRoute(settings: RestAPISettings, wallet: Wallet, state: State, consensusModule: WavesConsensusModule) extends ApiRoute {
   import AddressApiRoute._
 
   val MaxAddressesPerRequest = 1000
 
   override lazy val route =
     pathPrefix("addresses") {
-      validate ~ seed ~ balanceWithConfirmations ~ balance ~ verify ~ sign ~ deleteAddress ~ verifyText ~
+      validate ~ seed ~ balanceWithConfirmations ~ balanceDetails ~ balance ~ verify ~ sign ~ deleteAddress ~ verifyText ~
         signText ~ seq ~ publicKey ~ effectiveBalance ~ effectiveBalanceWithConfirmations
     } ~ root ~ create
 
@@ -119,6 +121,15 @@ case class AddressApiRoute(settings: RestAPISettings, wallet: Wallet, state: Sta
   ))
   def balance: Route = (path("balance" / Segment) & get) { address =>
     complete(balanceJson(address, 0))
+  }
+
+  @Path("/balance/details/{address}")
+  @ApiOperation(value = "Details for balance", notes = "Account's balances", httpMethod = "GET")
+  @ApiImplicitParams(Array(
+    new ApiImplicitParam(name = "address", value = "Address", required = true, dataType = "string", paramType = "path")
+  ))
+  def balanceDetails: Route = (path("balance" / "details" / Segment) & get) { address =>
+    complete(balancesDetailsJson(address))
   }
 
   @Path("/balance/{address}/{confirmations}")
@@ -228,6 +239,19 @@ case class AddressApiRoute(settings: RestAPISettings, wallet: Wallet, state: Sta
       .getOrElse(InvalidAddress)
   }
 
+  private def balancesDetailsJson(address: String): ToResponseMarshallable = {
+    Account.fromString(address).right.map(acc => {
+      val wavesBalance = state.balance(acc)
+      ToResponseMarshallable(BalanceDetails(
+        acc.address,
+        wavesBalance,
+        consensusModule.generatingBalance(acc, state.stateHeight),
+        wavesBalance - state.getLeasedSum(address),
+        state.effectiveBalance(acc)
+      ))
+    }).getOrElse(InvalidAddress)
+  }
+
   private def effectiveBalanceJson(address: String, confirmations: Int): ToResponseMarshallable = {
     Account.fromString(address).right.map(acc => ToResponseMarshallable(Balance(
       acc.address,
@@ -293,6 +317,10 @@ object AddressApiRoute {
 
   case class Balance(address: String, confirmations: Int, balance: Long)
   implicit val balanceFormat: Format[Balance] = Json.format
+
+  case class BalanceDetails(address: String, regular: Long, generating: Long, available: Long, effective: Long)
+
+  implicit val balanceDetailsFormat: Format[BalanceDetails] = Json.format
 
   case class Validity(address: String, valid: Boolean)
   implicit val validityFormat: Format[Validity] = Json.format
