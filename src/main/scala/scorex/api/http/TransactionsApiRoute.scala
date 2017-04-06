@@ -7,10 +7,11 @@ import akka.http.scaladsl.model.StatusCodes
 import akka.http.scaladsl.server.Route
 import com.wavesplatform.settings.RestAPISettings
 import io.swagger.annotations._
-import play.api.libs.json.{JsArray, JsNumber, Json}
+import play.api.libs.json._
 import scorex.account.Account
 import scorex.crypto.encode.Base58
-import scorex.transaction.{History, SimpleTransactionModule, State}
+import scorex.transaction.lease.LeaseCancelTransaction
+import scorex.transaction.{History, SimpleTransactionModule, State, Transaction}
 
 @Path("/transactions")
 @Api(value = "/transactions", description = "Information about transactions")
@@ -36,7 +37,7 @@ case class TransactionsApiRoute(
   def addressLimit: Route = (path("address" / Segment / "limit" / IntNumber) & get) { case (address, limit) =>
     if (limit <= MaxTransactionsPerRequest) {
       val account = Account.fromString(address).right.get
-      val txJsons = state.accountTransactions(account, limit).map(_.json)
+      val txJsons = state.accountTransactions(account, limit).map(txToExtendedJson)
       complete(Json.arr(txJsons))
     } else complete(TooBigArrayAllocation)
   }
@@ -54,7 +55,7 @@ case class TransactionsApiRoute(
             val jsonOpt = for {
               b <- history.blockAt(h)
               tx <- b.transactionData.collectFirst { case t if t.id sameElements sig => t }
-            } yield tx.json + ("height" -> JsNumber(h))
+            } yield txToExtendedJson(tx) + ("height" -> JsNumber(h))
 
             jsonOpt match {
               case Some(json) => complete(json)
@@ -73,6 +74,14 @@ case class TransactionsApiRoute(
   @Path("/unconfirmed")
   @ApiOperation(value = "Unconfirmed", notes = "Get list of unconfirmed transactions", httpMethod = "GET")
   def unconfirmed: Route = (path("unconfirmed") & get) {
-    complete(JsArray(transactionModule.unconfirmedTxs.map(_.json)))
+    complete(JsArray(transactionModule.unconfirmedTxs.map(txToExtendedJson)))
+  }
+
+  private def txToExtendedJson(tx: Transaction): JsObject = {
+    tx match {
+      case leaseCancel: LeaseCancelTransaction =>
+        leaseCancel.json ++ JsObject(Map("lease" -> state.findTransaction(leaseCancel.leaseId).map(_.json).getOrElse(JsNull)))
+      case tx => tx.json
+    }
   }
 }
